@@ -21,9 +21,9 @@ src/                         ← the Apps Script project (push this folder)
   Configuration.gs           constants, sheet schema, options, countries + dial codes
   Code.gs                    doGet routing, setup(), addAdmin(), triggers, public API
   Database.gs                Sheets access layer, summaries, settings, caching, logging
-  Registration.gs            submission flow, duplicates, ID generation, confirmation email
+  RegistrationService.gs     submission flow, duplicates, ID generation, confirmation email
   Validation.gs              server-side validation & sanitisation
-  Admin.gs                   role-checked admin API
+  AdminService.gs            role-checked admin API
   DriveService.gs            folder tree, photos, backups, sharing
   ReportService.gs           Google Doc/PDF reports, CSV/XLSX exports
   Index.html                 public page (homepage + includes)

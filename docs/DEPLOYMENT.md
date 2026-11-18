@@ -8,7 +8,8 @@ Use the school's own Google account (for example `alumni.centenary@gmail.com` or
 
 1. Open <https://script.google.com> → **New project**. Rename it `Centenary 2028 Alumni Portal`.
 2. Delete the default `Code.gs` content.
-3. For each `.gs` file in `src/`: click **+ → Script**, use the same name without `.gs` (e.g. `Configuration`), and paste the content.
+3. For each `.gs` file in `src/`: click **+ → Script**, use the same name without `.gs` (e.g. `Configuration`, `RegistrationService`, `AdminService`), and paste the content.
+   Apps Script does not allow a script file and an HTML file with the same name, which is why the script files are `RegistrationService` / `AdminService` while the pages are `Registration` / `Admin`.
 4. For each `.html` file: click **+ → HTML**, use the same name without `.html` (e.g. `Index`, `CSS`, `JavaScript`, `Translations`, `Registration`, `Admin`), and paste the content. **The names must match exactly**, because the pages include each other by name.
 5. **Project Settings (⚙) → Show "appsscript.json" manifest file in editor** → open `appsscript.json` and replace it with `src/appsscript.json`.
 6. In Project Settings, check that the time zone is `(GMT+05:30) India Standard Time`.

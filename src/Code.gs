@@ -5,7 +5,7 @@
  *
  * Public functions callable from the browser via google.script.run:
  *   submitRegistration, getPublicStats, getPublicDirectory, getPublicMemories
- * Admin functions live in Admin.gs and verify the caller on every call.
+ * Admin functions live in AdminService.gs and verify the caller on every call.
  * Owner-only maintenance: setup, addAdmin, removeAdmin, dailyMaintenance.
  */
 
