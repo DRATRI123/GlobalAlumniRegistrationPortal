@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <?!= include('CSS'); ?>
+  <style>
+    body { background: #f6f2e8; }
+    .adm-top { background: var(--navy); color: #fff; position: sticky; top: 0; z-index: 40; }
+    .adm-top .container { display: flex; align-items: center; gap: 14px; min-height: 64px; flex-wrap: wrap; }
+    .adm-top .brand { color: #fff; }
+    .adm-top .brand__name { color: #fff; }
+    .adm-user { font-size: 13px; color: #c6cce0; text-align: right; line-height: 1.3; }
+    .adm-user b { color: var(--gold-2); display: block; }
+    .tabs { display: flex; gap: 4px; overflow-x: auto; background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 64px; z-index: 30; }
+    .tabs .container { display: flex; gap: 4px; }
+    .tab { border: 0; background: none; padding: 14px 16px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
+    .tab[aria-selected="true"] { color: var(--maroon); border-bottom-color: var(--maroon); }
+    .adm-main { padding: 26px 0 60px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 22px; }
+    .kpi { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-sm); }
+    .kpi__v { font-family: var(--font-display); font-weight: 700; font-size: 36px; color: var(--maroon); line-height: 1; }
+    .kpi__l { font-size: 13.5px; color: var(--muted); margin-top: 6px; }
+    .charts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+    .chart { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow-sm); min-width: 0; }
+    .chart--wide { grid-column: 1 / -1; }
+    .chart h3 { font-size: 16.5px; margin-bottom: 14px; }
+    @media (max-width: 860px) { .charts { grid-template-columns: 1fr; } }
+    .chart .bar__track { background: var(--cream-2); }
+    .chart .bar__fill { background: linear-gradient(90deg, var(--maroon), #a5434f); }
+    .chart .bar { grid-template-columns: minmax(90px, 40%) 1fr 48px; }
+    .cols { display: flex; align-items: flex-end; gap: 3px; height: 180px; padding-top: 10px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+    .col { flex: 1 0 14px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 14px; }
+    .col__bar { width: 100%; background: linear-gradient(180deg, var(--gold-2), var(--gold)); border-radius: 4px 4px 0 0; min-height: 2px; }
+    .col__n { font-size: 10px; color: var(--muted); }
+    .cols-axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+    .ptable { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .ptable th, .ptable td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; }
+    .ptable td.n { text-align: right; font-family: var(--font-display); font-size: 17px; font-weight: 700; }
+    .filters { display: grid; grid-template-columns: 150px 1fr 190px 130px 160px auto; gap: 10px; align-items: end; background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 14px; }
+    .filters label { font-size: 12.5px; font-weight: 600; color: var(--navy); display: block; margin-bottom: 4px; }
+    @media (max-width: 1000px) { .filters { grid-template-columns: 1fr 1fr; } .filters .f-q { grid-column: 1 / -1; } }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .table-wrap { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
+    table.data { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 820px; }
+    table.data th { background: var(--cream-2); color: var(--navy); text-align: left; padding: 11px 12px; font-size: 12.5px; white-space: nowrap; }
+    table.data td { padding: 11px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+    table.data tbody tr { cursor: pointer; }
+    table.data tbody tr:hover { background: #fffaf0; }
+    .tag { display: inline-block; font-size: 11.5px; padding: 2px 8px; border-radius: 99px; background: var(--cream-2); color: var(--navy); white-space: nowrap; }
+    .tag--warn { background: #fff1d6; color: #8a5a00; }
+    .tag--ok { background: var(--ok-soft); color: var(--ok); }
+    .tag--mute { background: #eee; color: #666; }
+    .pager { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 12px; }
+    .gate { max-width: 560px; margin: 60px auto; text-align: center; }
+    .modal__box.wide { max-width: 980px; }
+    .profile-head { display: flex; gap: 18px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+    .profile-photo { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; background: var(--gold-soft); display: grid; place-items: center; font-size: 30px; color: var(--maroon); font-family: var(--font-serif); flex: 0 0 auto; }
+    .profile-photo img { width: 100%; height: 100%; object-fit: cover; }
+    .profile-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 18px; }
+    .tools { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .result-links a { display: inline-block; margin-right: 12px; }
+    @media print {
+      body.print-profile > *:not(#profileModal) { display: none !important; }
+      body.print-profile #profileModal { position: static; background: none; padding: 0; }
+      body.print-profile .modal__box { max-height: none; box-shadow: none; }
+      body.print-profile .modal__close, body.print-profile .profile-actions { display: none !important; }
+    }
+  </style>
+</head>
+<body data-page="admin" data-title-key="adm.metaTitle">
+  <header class="adm-top">
+    <div class="container">
+      <span class="brand" style="flex:1 1 auto">
+        <span class="brand__seal num">100</span>
+        <span class="brand__text"><span class="brand__name" data-i18n="adm.title"></span><span class="brand__sub" data-school-name></span></span>
+      </span>
+      <div class="adm-user" id="admUser" hidden><b id="admEmail"></b><span id="admRole"></span></div>
+      <div class="lang-switch" role="group" data-i18n-aria="nav.language">
+        <button type="button" data-lang="gu" aria-pressed="true" lang="gu">ગુજરાતી</button>
+        <button type="button" data-lang="hi" aria-pressed="false" lang="hi">हिन्दी</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Access gate -->
+  <div class="container gate" id="gate">
+    <div class="card" id="gateLoading"><div class="spinner"></div><p data-i18n="adm.checking"></p></div>
+    <div class="card" id="gateDenied" hidden>
+      <h1 style="font-size:24px" data-i18n="adm.denied.title"></h1>
+      <p id="gateDeniedText"></p>
+      <p class="field__help" data-i18n="adm.denied.help"></p>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="admApp" hidden>
+    <nav class="tabs" role="tablist">
+      <div class="container">
+        <button class="tab" role="tab" data-tab="overview" aria-selected="true" data-i18n="adm.tab.overview"></button>
+        <button class="tab" role="tab" data-tab="records" aria-selected="false" data-i18n="adm.tab.records"></button>
+        <button class="tab" role="tab" data-tab="activity" aria-selected="false" data-i18n="adm.tab.activity"></button>
+        <button class="tab" role="tab" data-tab="tools" aria-selected="false" data-i18n="adm.tab.tools"></button>
+      </div>
+    </nav>
+    <main class="container adm-main">
+      <!-- Overview -->
+      <section data-panel="overview" role="tabpanel">
+        <div class="toolbar"><h1 style="font-size:24px;margin:0" data-i18n="adm.tab.overview"></h1>
+          <button class="btn btn--light btn--sm" type="button" id="btnRefresh" data-i18n="adm.refresh"></button></div>
+        <div class="kpis" id="kpis"></div>
+        <div class="charts">
+          <div class="chart chart--wide"><h3 data-i18n="adm.chart.year"></h3><div class="cols" id="chYear"></div><div class="cols-axis" id="chYearAxis"></div></div>
+          <div class="chart"><h3 data-i18n="adm.chart.country"></h3><div class="bars" id="chCountry"></div></div>
+          <div class="chart"><h3 data-i18n="adm.chart.occupation"></h3><div class="bars" id="chOcc"></div></div>
+          <div class="chart"><h3 data-i18n="adm.chart.state"></h3><div class="bars" id="chState"></div></div>
+          <div class="chart"><h3 data-i18n="adm.chart.city"></h3><div class="bars" id="chCity"></div></div>
+          <div class="chart"><h3 data-i18n="adm.chart.participation"></h3><table class="ptable" id="chPart"></table></div>
+          <div class="chart"><h3 data-i18n="adm.chart.daily"></h3><div class="cols" id="chDaily"></div><div class="cols-axis" id="chDailyAxis"></div></div>
+        </div>
+      </section>
+
+      <!-- Records -->
+      <section data-panel="records" role="tabpanel" hidden>
+        <form class="filters" id="filterForm" role="search">
+          <div><label for="qField" data-i18n="adm.f.field"></label>
+            <select class="select" id="qField">
+              <option value="any" data-i18n="adm.f.any"></option><option value="name" data-i18n="adm.f.name"></option>
+              <option value="mobile" data-i18n="adm.f.mobile"></option><option value="id" data-i18n="adm.f.id"></option>
+              <option value="email" data-i18n="adm.f.email"></option>
+            </select></div>
+          <div class="f-q"><label for="qText" data-i18n="adm.f.query"></label><input class="input" id="qText" type="search" maxlength="100" data-i18n-placeholder="adm.f.queryPh"></div>
+          <div><label for="qCountry" data-i18n="adm.f.country"></label><select class="select" id="qCountry"></select></div>
+          <div><label for="qYear" data-i18n="adm.f.year"></label><select class="select" id="qYear"></select></div>
+          <div><label for="qMod" data-i18n="adm.f.moderation"></label>
+            <select class="select" id="qMod">
+              <option value="" data-i18n="adm.f.all"></option><option value="PENDING" data-i18n="opt.mod.PENDING"></option>
+              <option value="APPROVED" data-i18n="opt.mod.APPROVED"></option><option value="HIDDEN" data-i18n="opt.mod.HIDDEN"></option>
+              <option value="NOT_CONSENTED" data-i18n="opt.mod.NOT_CONSENTED"></option>
+            </select></div>
+          <div><button class="btn btn--primary" type="submit" data-i18n="common.search"></button></div>
+          <label class="inline-check" style="grid-column:1/-1"><input type="checkbox" id="qDup"> <span data-i18n="adm.f.duplicates"></span></label>
+        </form>
+        <div class="toolbar">
+          <div id="resultCount" class="field__help" aria-live="polite"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap" data-min-role="ADMIN">
+            <button class="btn btn--light btn--sm" type="button" id="btnCsv" data-i18n="adm.exportCsv"></button>
+            <button class="btn btn--light btn--sm" type="button" id="btnXlsx" data-i18n="adm.exportXlsx"></button>
+          </div>
+        </div>
+        <div id="exportResult" class="alert alert--ok result-links" hidden></div>
+        <div class="table-wrap">
+          <table class="data">
+            <thead><tr>
+              <th data-i18n="f.registrationId"></th><th data-i18n="f.fullName"></th><th data-i18n="adm.col.batch"></th>
+              <th data-i18n="adm.col.location"></th><th data-i18n="f.occupation"></th><th data-i18n="f.mobile"></th>
+              <th data-i18n="f.timestamp"></th><th data-i18n="adm.col.flags"></th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <p class="empty" id="rowsEmpty" hidden data-i18n="adm.noResults" style="margin-top:12px"></p>
+        <div class="pager"><button class="btn btn--light btn--sm" type="button" id="pgPrev" data-i18n="common.prev"></button><span id="pgInfo" class="num"></span><button class="btn btn--light btn--sm" type="button" id="pgNext" data-i18n="common.next"></button></div>
+      </section>
+
+      <!-- Activity -->
+      <section data-panel="activity" role="tabpanel" hidden>
+        <div class="toolbar"><h1 style="font-size:24px;margin:0" data-i18n="adm.tab.activity"></h1>
+          <button class="btn btn--light btn--sm" type="button" id="btnActRefresh" data-i18n="adm.refresh"></button></div>
+        <div class="table-wrap"><table class="data"><thead><tr>
+          <th data-i18n="adm.act.time"></th><th data-i18n="adm.act.action"></th><th data-i18n="f.registrationId"></th>
+          <th data-i18n="adm.act.actor"></th><th data-i18n="adm.act.status"></th><th data-i18n="adm.act.details"></th>
+        </tr></thead><tbody id="actRows"></tbody></table></div>
+      </section>
+
+      <!-- Tools -->
+      <section data-panel="tools" role="tabpanel" hidden>
+        <h1 style="font-size:24px" data-i18n="adm.tab.tools"></h1>
+        <div class="tools">
+          <div class="card" data-min-role="ADMIN"><h3 data-i18n="adm.tools.rebuild"></h3><p data-i18n="adm.tools.rebuildText"></p>
+            <button class="btn btn--light btn--sm" type="button" id="btnRebuild" data-i18n="adm.tools.run"></button></div>
+          <div class="card" data-min-role="SUPER_ADMIN"><h3 data-i18n="adm.tools.backup"></h3><p data-i18n="adm.tools.backupText"></p>
+            <button class="btn btn--light btn--sm" type="button" id="btnBackup" data-i18n="adm.tools.run"></button></div>
+          <div class="card" data-min-role="SUPER_ADMIN"><h3 data-i18n="adm.tools.links"></h3><p data-i18n="adm.tools.linksText"></p>
+            <p class="result-links" id="toolLinks"></p></div>
+          <div class="card" data-min-role="SUPER_ADMIN"><h3 data-i18n="adm.tools.admins"></h3><p data-i18n="adm.tools.adminsText"></p>
+            <ul id="adminList" style="padding-left:18px;margin:0"></ul></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Profile modal -->
+  <div class="modal" id="profileModal" hidden role="dialog" aria-modal="true" aria-labelledby="pfTitle">
+    <div class="modal__box wide">
+      <div class="modal__head"><h2 id="pfTitle"></h2><button class="modal__close" type="button" data-close="profileModal" data-i18n-aria="common.close">×</button></div>
+      <div class="modal__body" id="pfBody"></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="loadingOverlay" hidden role="alertdialog" aria-busy="true">
+    <div class="overlay__box"><div class="spinner"></div><p id="loadingMsg" style="margin:0" data-i18n="common.loading"></p></div>
+  </div>
+
+  <script>window.APP_BOOT = <?!= bootstrapJson ?>;</script>
+  <?!= include('Translations'); ?>
+  <?!= include('JavaScript'); ?>
+  <script>
+  /* ================================ Admin logic ================================ */
+  (function () {
+    'use strict';
+    var A = window.App, t = A.t, el = A.el, $ = A.$, $$ = A.$$;
+    var ROLE_LEVEL = { VIEWER: 1, ADMIN: 2, SUPER_ADMIN: 3 };
+    var S = { user: null, stats: null, query: { page: 1 }, result: null, profile: null, editing: false, activity: [] };
+
+    var EDIT_STEPS = A.STEPS.filter(function (s) { return !s.publicOnly; }).map(function (s) {
+      return { id: s.id, fields: s.fields.filter(function (f) { return !f.publicOnly; }) };
+    });
+    var EDIT_FIELDS = [];
+    EDIT_STEPS.forEach(function (s) { EDIT_FIELDS = EDIT_FIELDS.concat(s.fields); });
+    var CONSENT_KEYS = ['consentStore', 'consentContact', 'consentDirectory', 'consentPhoto', 'consentPrivacy', 'consentTimestamp', 'privacyVersion'];
+    var META_KEYS = ['registrationId', 'timestamp', 'status', 'language', 'moderation', 'possibleDuplicateOf', 'adminNotes', 'lastUpdated', 'updatedBy'];
+    var MASTER_KEYS = ['timestamp', 'registrationId', 'status', 'fullName', 'gender', 'dob', 'fatherName', 'admissionYear', 'leavingYear',
+      'lastStandard', 'division', 'lcNumber', 'favouriteTeacher', 'mobile', 'whatsapp', 'email', 'altPhone', 'countryCode', 'country', 'state',
+      'city', 'postalCode', 'address', 'occupation', 'occupationOther', 'organization', 'designation', 'professionalField', 'website',
+      'achievements', 'awards', 'socialContributions', 'schoolMemory', 'messageForSchool', 'teachersRemembered', 'attendCentenary',
+      'attendReunion', 'volunteer', 'supportDevelopment', 'joinAssociation'].concat(CONSENT_KEYS, ['language', 'moderation', 'possibleDuplicateOf', 'adminNotes', 'lastUpdated', 'updatedBy']);
+
+    function can(role) { return S.user && ROLE_LEVEL[S.user.role] >= ROLE_LEVEL[role]; }
+    function errText(res) { return t('adm.err.' + ((res && res.code) || 'SERVER')); }
+    function call(fn) {
+      var args = Array.prototype.slice.call(arguments);
+      return A.api.apply(null, args).then(function (res) {
+        if (!res || !res.ok) { var e = new Error('fail'); e.res = res || { code: 'SERVER' }; throw e; }
+        return res.data;
+      }, function (err) { var e = new Error('net'); e.res = { code: err.code || 'NETWORK' }; throw e; });
+    }
+    function fail(e) { A.loading(false); A.toast(errText(e.res)); if (e.res && (e.res.code === 'FORBIDDEN' || e.res.code === 'NOT_SIGNED_IN')) deny(e.res.code); }
+
+    /* --------------------------------------------------------------- gate */
+    function deny(code) {
+      $('#gate').hidden = false; $('#admApp').hidden = true;
+      $('#gateLoading').hidden = true; $('#gateDenied').hidden = false;
+      $('#gateDeniedText').setAttribute('data-i18n', 'adm.denied.' + (code === 'NOT_SIGNED_IN' ? 'signin' : (code === 'FORBIDDEN' ? 'forbidden' : 'error')));
+      A.applyTranslations($('#gateDenied'));
+    }
+    function boot() {
+      call('adminGetContext').then(function (u) {
+        S.user = u;
+        $('#gate').hidden = true; $('#admApp').hidden = false; $('#admUser').hidden = false;
+        $('#admEmail').textContent = u.email;
+        renderRole();
+        $$('[data-min-role]').forEach(function (n) { n.hidden = !can(n.getAttribute('data-min-role')); });
+        loadDashboard();
+      }).catch(function (e) { deny(e.res && e.res.code); });
+    }
+    function renderRole() { if (S.user) $('#admRole').textContent = t('adm.role.' + S.user.role); }
+
+    /* --------------------------------------------------------------- tabs */
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-tab]'); if (!b) return;
+      var name = b.getAttribute('data-tab');
+      $$('[data-tab]').forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); });
+      $$('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== name; });
+      if (name === 'records' && !S.result) search(1);
+      if (name === 'activity') loadActivity();
+      if (name === 'tools' && can('SUPER_ADMIN')) loadTools();
+    });
+
+    /* ----------------------------------------------------------- overview */
+    function loadDashboard() {
+      call('adminGetDashboard').then(function (s) { S.stats = s; renderDashboard(); fillFilters(); }).catch(fail);
+    }
+    function kpi(v, key) { return el('div', { class: 'kpi' }, [el('div', { class: 'kpi__v', text: A.fmtNum(v) }), el('div', { class: 'kpi__l', text: t(key) })]); }
+    function barList(container, rows, labelFn) {
+      container.textContent = '';
+      if (!rows.length) { container.appendChild(el('p', { class: 'field__help', text: t('adm.noData') })); return; }
+      var max = rows.reduce(function (m, r) { return Math.max(m, r[1]); }, 1);
+      rows.forEach(function (r) {
+        container.appendChild(el('div', { class: 'bar' }, [
+          el('span', { class: 'bar__name', text: labelFn(r[0]), title: labelFn(r[0]) }),
+          el('div', { class: 'bar__track' }, [el('div', { class: 'bar__fill', style: 'width:' + Math.max(3, r[1] / max * 100) + '%' })]),
+          el('span', { class: 'bar__n num', text: A.fmtNum(r[1]) })
+        ]));
+      });
+    }
+    function columns(container, axis, rows) {
+      container.textContent = ''; axis.textContent = '';
+      if (!rows.length) { container.appendChild(el('p', { class: 'field__help', text: t('adm.noData') })); return; }
+      var max = rows.reduce(function (m, r) { return Math.max(m, r[1]); }, 1);
+      rows.forEach(function (r) {
+        container.appendChild(el('div', { class: 'col', title: r[0] + ': ' + r[1] }, [
+          el('span', { class: 'col__n', text: r[1] ? String(r[1]) : '' }),
+          el('div', { class: 'col__bar', style: 'height:' + (r[1] / max * 85) + '%' })
+        ]));
+      });
+      axis.appendChild(el('span', { text: String(rows[0][0]) }));
+      axis.appendChild(el('span', { text: String(rows[rows.length - 1][0]) }));
+    }
+    function renderDashboard() {
+      var s = S.stats; if (!s) return;
+      var k = $('#kpis'); k.textContent = '';
+      [[s.total, 'adm.kpi.total'], [s.countriesCount, 'adm.kpi.countries'], [s.india, 'adm.kpi.india'], [s.abroad, 'adm.kpi.abroad'],
+        [s.last7, 'adm.kpi.last7'], [s.participation.attendCentenary.YES, 'adm.kpi.attending'], [s.pendingModeration, 'adm.kpi.pending'],
+        [s.softDuplicates, 'adm.kpi.duplicates']].forEach(function (x) { k.appendChild(kpi(x[0], x[1])); });
+      columns($('#chYear'), $('#chYearAxis'), s.byYear);
+      columns($('#chDaily'), $('#chDailyAxis'), s.daily.map(function (d) { return [A.fmtDate(d[0]), d[1]]; }));
+      barList($('#chCountry'), s.byCountry.slice(0, 15), A.countryName);
+      barList($('#chOcc'), s.byOccupation, function (c) { return t('opt.occ.' + c); });
+      barList($('#chState'), s.byState.slice(0, 15), function (x) { return x; });
+      barList($('#chCity'), s.byCity.slice(0, 15), function (x) { return x; });
+      var tb = $('#chPart'); tb.textContent = '';
+      tb.appendChild(el('tr', null, [el('th', { text: '' }), el('th', { text: t('opt.part.YES') }), el('th', { text: t('opt.part.MAYBE') }), el('th', { text: t('opt.part.NO') })]));
+      Object.keys(s.participation).forEach(function (key) {
+        var p = s.participation[key];
+        tb.appendChild(el('tr', null, [el('td', { text: t('f.' + key) }), el('td', { class: 'n', text: A.fmtNum(p.YES) }), el('td', { class: 'n', text: A.fmtNum(p.MAYBE) }), el('td', { class: 'n', text: A.fmtNum(p.NO) })]));
+      });
+    }
+    $('#btnRefresh').addEventListener('click', loadDashboard);
+
+    /* ------------------------------------------------------------ records */
+    function fillFilters() {
+      var c = $('#qCountry'), cur = c.value; c.textContent = '';
+      c.appendChild(el('option', { value: '', text: t('adm.f.all') }));
+      (S.stats ? S.stats.byCountry : []).forEach(function (r) { c.appendChild(el('option', { value: r[0], text: A.countryName(r[0]) + ' (' + r[1] + ')' })); });
+      c.value = cur;
+      var y = $('#qYear'), cy = y.value; y.textContent = '';
+      y.appendChild(el('option', { value: '', text: t('adm.f.all') }));
+      (S.stats ? S.stats.byYear.slice().reverse() : []).forEach(function (r) { y.appendChild(el('option', { value: String(r[0]), text: r[0] + ' (' + r[1] + ')' })); });
+      y.value = cy;
+    }
+    function currentQuery(page) {
+      return { field: $('#qField').value, q: $('#qText').value, country: $('#qCountry').value, year: $('#qYear').value,
+        moderation: $('#qMod').value, duplicatesOnly: $('#qDup').checked, page: page || 1 };
+    }
+    function search(page) {
+      S.query = currentQuery(page);
+      $('#rows').textContent = '';
+      $('#resultCount').textContent = t('common.loading');
+      call('adminSearch', S.query).then(function (r) { S.result = r; renderRows(); }).catch(fail);
+    }
+    function modTag(m) {
+      var cls = m === 'APPROVED' ? 'tag tag--ok' : (m === 'PENDING' ? 'tag tag--warn' : 'tag tag--mute');
+      return el('span', { class: cls, text: t('opt.mod.' + (m || 'NOT_CONSENTED')) });
+    }
+    function renderRows() {
+      var r = S.result; if (!r) return;
+      var tb = $('#rows'); tb.textContent = '';
+      r.rows.forEach(function (x) {
+        var tr = el('tr', { tabindex: '0', 'data-id': x.registrationId }, [
+          el('td', { class: 'num', text: x.registrationId }),
+          el('td', null, [el('strong', { text: x.fullName })]),
+          el('td', { text: x.admissionYear + '–' + x.leavingYear }),
+          el('td', { text: [x.city, A.countryName(x.countryCode)].filter(Boolean).join(', ') }),
+          el('td', { text: x.occupation ? t('opt.occ.' + x.occupation) : '—' }),
+          el('td', { text: x.mobile }),
+          el('td', { text: A.fmtDate(x.timestamp, true) }),
+          el('td', null, [modTag(x.moderation), x.possibleDuplicateOf ? el('span', { class: 'tag tag--warn', style: 'margin-left:4px', text: t('adm.tag.duplicate') }) : null])
+        ]);
+        tb.appendChild(tr);
+      });
+      $('#rowsEmpty').hidden = r.rows.length > 0;
+      $('#resultCount').textContent = t('adm.resultCount', { n: A.fmtNum(r.total) });
+      $('#pgInfo').textContent = r.page + ' / ' + r.pages;
+      $('#pgPrev').disabled = r.page <= 1; $('#pgNext').disabled = r.page >= r.pages;
+    }
+    $('#filterForm').addEventListener('submit', function (e) { e.preventDefault(); search(1); });
+    $('#pgPrev').addEventListener('click', function () { search(S.query.page - 1); });
+    $('#pgNext').addEventListener('click', function () { search(S.query.page + 1); });
+    $('#rows').addEventListener('click', function (e) { var tr = e.target.closest('tr[data-id]'); if (tr) openProfile(tr.getAttribute('data-id')); });
+    $('#rows').addEventListener('keydown', function (e) { if (e.key === 'Enter') { var tr = e.target.closest('tr[data-id]'); if (tr) openProfile(tr.getAttribute('data-id')); } });
+
+    /* ------------------------------------------------------------- export */
+    function download(res) {
+      try {
+        var bin = atob(res.base64), bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        var url = URL.createObjectURL(new Blob([bytes], { type: res.mimeType }));
+        var a = el('a', { href: url, download: res.name }); document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+      } catch (e) { /* fall back to Drive link below */ }
+      var box = $('#exportResult'); box.textContent = ''; box.hidden = false;
+      box.appendChild(el('span', { text: t('adm.exportDone', { n: res.count, name: res.name }) + ' ' }));
+      box.appendChild(el('a', { href: res.url, target: '_blank', rel: 'noopener', text: t('adm.openDrive') }));
+    }
+    function exportAs(fmt) {
+      A.loading(true, 'adm.exporting');
+      call('adminExport', currentQuery(1), fmt).then(function (r) { A.loading(false); download(r); }).catch(fail);
+    }
+    $('#btnCsv').addEventListener('click', function () { exportAs('csv'); });
+    $('#btnXlsx').addEventListener('click', function () { exportAs('xlsx'); });
+
+    /* ------------------------------------------------------------ profile */
+    function openProfile(id) {
+      A.loading(true, 'common.loading');
+      call('adminGetProfile', id).then(function (p) {
+        A.loading(false); S.profile = p; S.editing = false; renderProfile(); A.openModal('profileModal');
+      }).catch(fail);
+    }
+    function metaValue(key, v) {
+      if (v === '' || v === null || v === undefined) return '—';
+      if (typeof v === 'boolean') return v ? t('common.yes') : t('common.no');
+      if (key === 'timestamp' || key === 'lastUpdated' || key === 'consentTimestamp') return A.fmtDate(v, true);
+      if (key === 'moderation') return t('opt.mod.' + v);
+      if (key === 'language') return t('opt.lang.' + v);
+      if (key === 'status') return t('opt.status.' + v);
+      return String(v);
+    }
+    function dlGroup(titleKey, pairs) {
+      var dl = el('dl');
+      pairs.forEach(function (p) { dl.appendChild(el('dt', { text: p[0] })); dl.appendChild(el('dd', { text: p[1] })); });
+      return el('div', { class: 'review__group' }, [el('div', { class: 'review__head' }, [el('h3', { text: t(titleKey) })]), dl]);
+    }
+    function renderProfile() {
+      var p = S.profile, body = $('#pfBody');
+      $('#pfTitle').textContent = p.fullName + ' · ' + p.registrationId;
+      body.textContent = '';
+      var photo = el('div', { class: 'profile-photo' }, [p.photoDataUrl ? el('img', { src: p.photoDataUrl, alt: t('f.photo') }) : document.createTextNode(A.initials(p.fullName))]);
+      body.appendChild(el('div', { class: 'profile-head' }, [photo, el('div', null, [
+        el('h3', { style: 'margin:0', text: p.fullName }),
+        el('div', { class: 'field__help', text: t('adm.col.batch') + ': ' + p.admissionYear + '–' + p.leavingYear + ' · ' + [p.city, A.countryName(p.countryCode)].filter(Boolean).join(', ') }),
+        el('div', { style: 'margin-top:6px' }, [modTag(p.moderation), p.possibleDuplicateOf ? el('span', { class: 'tag tag--warn', style: 'margin-left:6px', text: t('adm.tag.duplicateOf', { ids: p.possibleDuplicateOf }) }) : null])
+      ])]));
+
+      var actions = el('div', { class: 'profile-actions' });
+      if (can('ADMIN')) {
+        actions.appendChild(el('button', { type: 'button', class: 'btn btn--primary btn--sm', text: t(S.editing ? 'common.cancel' : 'common.edit'), onclick: function () { S.editing = !S.editing; renderProfile(); } }));
+        actions.appendChild(el('button', { type: 'button', class: 'btn btn--light btn--sm', text: t('adm.report'), onclick: generateReport }));
+      }
+      actions.appendChild(el('button', { type: 'button', class: 'btn btn--light btn--sm', text: t('adm.print'), onclick: printProfile }));
+      if (can('ADMIN') && p.consentDirectory) {
+        var sel = el('select', { class: 'select', style: 'width:auto;min-height:36px;padding-top:4px;padding-bottom:4px', 'aria-label': t('adm.f.moderation') });
+        ['PENDING', 'APPROVED', 'HIDDEN'].forEach(function (m) { sel.appendChild(el('option', { value: m, text: t('opt.mod.' + m) })); });
+        sel.value = p.moderation;
+        sel.addEventListener('change', function () { setModeration(sel.value); });
+        actions.appendChild(sel);
+      }
+      if (can('SUPER_ADMIN')) actions.appendChild(el('button', { type: 'button', class: 'btn btn--danger btn--sm', text: t('adm.delete'), onclick: deleteRecord }));
+      body.appendChild(actions);
+      body.appendChild(el('div', { id: 'reportResult', class: 'alert alert--ok result-links', hidden: true }));
+
+      if (S.editing) { body.appendChild(editForm(p)); return; }
+
+      var wrap = el('div', { class: 'review' });
+      EDIT_STEPS.forEach(function (s) {
+        wrap.appendChild(dlGroup('step.' + s.id + '.title', s.fields.filter(function (f) { return A.isVisible(f, p) || p[f.name]; })
+          .map(function (f) { return [t('f.' + f.name), A.displayValue(f, p, 'admin')]; })));
+      });
+      wrap.appendChild(dlGroup('step.consent.title', CONSENT_KEYS.map(function (k) { return [t('f.' + k), metaValue(k, p[k])]; })));
+      wrap.appendChild(dlGroup('adm.group.meta', META_KEYS.map(function (k) { return [t('f.' + k), metaValue(k, p[k])]; })));
+      body.appendChild(wrap);
+    }
+
+    function editForm(p) {
+      var form = el('form', { novalidate: true, id: 'editForm' });
+      EDIT_STEPS.forEach(function (s) {
+        form.appendChild(el('h3', { text: t('step.' + s.id + '.title') }));
+        var grid = el('div', { class: 'fields' });
+        s.fields.forEach(function (f) { grid.appendChild(A.renderField(f, { mode: 'admin', prefix: 'e' })); });
+        form.appendChild(grid);
+      });
+      form.appendChild(el('h3', { text: t('f.adminNotes') }));
+      form.appendChild(el('div', { class: 'field', 'data-field': 'adminNotes' }, [el('textarea', { class: 'textarea', name: 'adminNotes', maxlength: 1000, 'aria-label': t('f.adminNotes') })]));
+      form.appendChild(el('div', { class: 'alert alert--err', id: 'editError', hidden: true, role: 'alert' }));
+      form.appendChild(el('div', { class: 'form-nav' }, [
+        el('button', { type: 'button', class: 'btn btn--light', text: t('common.cancel'), onclick: function () { S.editing = false; renderProfile(); } }),
+        el('button', { type: 'submit', class: 'btn btn--primary', text: t('common.save') })
+      ]));
+      setTimeout(function () {
+        A.writeValues(form, EDIT_FIELDS, p, 'admin');
+        form.querySelector('[name="adminNotes"]').value = p.adminNotes || '';
+        A.refreshConditional(form, EDIT_FIELDS, A.readValues(form, EDIT_FIELDS, 'admin'));
+      }, 0);
+      form.addEventListener('change', function () { A.refreshConditional(form, EDIT_FIELDS, A.readValues(form, EDIT_FIELDS, 'admin')); });
+      form.addEventListener('submit', function (e) { e.preventDefault(); saveEdit(form); });
+      return form;
+    }
+    function saveEdit(form) {
+      var d = A.readValues(form, EDIT_FIELDS, 'admin'), bad = null;
+      EDIT_FIELDS.forEach(function (f) { var c = A.validateField(f, d, 'admin'); A.showError(form, f.name, c); if (c && !bad) bad = f.name; });
+      if (bad) { var w = form.querySelector('[data-field="' + bad + '"]'); if (w) w.scrollIntoView({ block: 'center' }); return; }
+      d.adminNotes = form.querySelector('[name="adminNotes"]').value;
+      A.loading(true, 'common.saving');
+      call('adminUpdateProfile', S.profile.registrationId, d).then(function (r) {
+        A.loading(false);
+        var photo = S.profile.photoDataUrl;
+        S.profile = r.record; S.profile.photoDataUrl = photo; S.editing = false;
+        renderProfile(); A.toast(r.changed.length ? t('adm.saved', { n: r.changed.length }) : t('adm.noChanges'));
+        if (S.result) search(S.query.page);
+        S.statsDirty = true;
+      }).catch(function (e) {
+        A.loading(false);
+        if (e.res && e.res.code === 'VALIDATION' && e.res.extra && e.res.extra.errors) {
+          Object.keys(e.res.extra.errors).forEach(function (k) { A.showError(form, k, e.res.extra.errors[k]); });
+        }
+        var box = $('#editError'); box.hidden = false; box.textContent = errText(e.res);
+      });
+    }
+    function setModeration(m) {
+      call('adminSetModeration', S.profile.registrationId, m).then(function (r) {
+        S.profile.moderation = r.moderation; renderProfile(); A.toast(t('adm.moderationSaved'));
+        if (S.result) search(S.query.page);
+      }).catch(fail);
+    }
+    function deleteRecord() {
+      var id = S.profile.registrationId;
+      var typed = window.prompt(t('adm.deleteConfirm', { id: id }));
+      if (typed === null) return;
+      A.loading(true, 'common.saving');
+      call('adminDeleteRecord', id, typed).then(function () {
+        A.loading(false); A.closeModal('profileModal'); A.toast(t('adm.deleted', { id: id })); search(1); loadDashboard();
+      }).catch(fail);
+    }
+    function reportLabels() {
+      var L = { fields: {}, groups: {}, options: {}, title: t('adm.reportTitle'), generated: t('adm.generated'), yes: t('common.yes'), no: t('common.no') };
+      MASTER_KEYS.forEach(function (k) { if (A.has('f.' + k)) L.fields[k] = t('f.' + k); });
+      A.STEPS.forEach(function (s) { L.groups[s.id] = t('step.' + s.id + '.title'); });
+      L.groups.meta = t('adm.group.meta');
+      (A.boot.options.GENDER || []).forEach(function (o) { L.options['gender.' + o] = t('opt.gender.' + o); });
+      (A.boot.options.STANDARDS || []).forEach(function (o) { L.options['lastStandard.' + o] = t('opt.std.' + o); });
+      (A.boot.options.OCCUPATION || []).forEach(function (o) { L.options['occupation.' + o] = t('opt.occ.' + o); });
+      ['attendCentenary', 'attendReunion', 'volunteer', 'supportDevelopment', 'joinAssociation'].forEach(function (k) {
+        (A.boot.options.PARTICIPATION || []).forEach(function (o) { L.options[k + '.' + o] = t('opt.part.' + o); });
+      });
+      (A.boot.options.MODERATION || []).forEach(function (o) { L.options['moderation.' + o] = t('opt.mod.' + o); });
+      L.options['language.gu'] = t('opt.lang.gu'); L.options['language.hi'] = t('opt.lang.hi');
+      L.options['status.ACTIVE'] = t('opt.status.ACTIVE');
+      if (S.profile.countryCode) L.options['countryCode.' + S.profile.countryCode] = A.countryName(S.profile.countryCode);
+      return L;
+    }
+    function generateReport() {
+      A.loading(true, 'adm.generating');
+      call('adminGenerateReport', S.profile.registrationId, reportLabels()).then(function (r) {
+        A.loading(false);
+        var box = $('#reportResult'); box.textContent = ''; box.hidden = false;
+        box.appendChild(el('span', { text: t('adm.reportReady') + ' ' }));
+        box.appendChild(el('a', { href: r.docUrl, target: '_blank', rel: 'noopener', text: t('adm.openDoc') }));
+        box.appendChild(el('a', { href: r.pdfUrl, target: '_blank', rel: 'noopener', text: t('adm.openPdf') }));
+      }).catch(fail);
+    }
+    function printProfile() {
+      document.body.classList.add('print-profile');
+      window.print();
+      setTimeout(function () { document.body.classList.remove('print-profile'); }, 500);
+    }
+
+    /* ----------------------------------------------------------- activity */
+    function loadActivity() {
+      call('adminGetActivity', 150).then(function (rows) { S.activity = rows; renderActivity(); }).catch(fail);
+    }
+    function renderActivity() {
+      var tb = $('#actRows'); tb.textContent = '';
+      S.activity.forEach(function (r) {
+        tb.appendChild(el('tr', null, [el('td', { text: A.fmtDate(r.timestamp, true) }), el('td', { text: r.action }), el('td', { class: 'num', text: r.registrationId || '—' }),
+          el('td', { text: r.actor }), el('td', { text: r.status }), el('td', { style: 'max-width:360px;word-break:break-word', text: r.details })]));
+      });
+    }
+    $('#btnActRefresh').addEventListener('click', loadActivity);
+
+    /* -------------------------------------------------------------- tools */
+    function loadTools() {
+      call('adminGetTools').then(function (r) {
+        var l = $('#toolLinks'); l.textContent = '';
+        l.appendChild(el('a', { href: r.spreadsheetUrl, target: '_blank', rel: 'noopener', text: t('adm.tools.sheet') }));
+        l.appendChild(el('a', { href: r.folderUrl, target: '_blank', rel: 'noopener', text: t('adm.tools.folder') }));
+        var ul = $('#adminList'); ul.textContent = '';
+        r.admins.forEach(function (a) { ul.appendChild(el('li', { text: a.email + ' — ' + t('adm.role.' + a.role) + (a.active ? '' : ' (' + t('adm.inactive') + ')') })); });
+      }).catch(fail);
+    }
+    $('#btnRebuild').addEventListener('click', function () {
+      A.loading(true, 'common.loading');
+      call('adminRebuildSummaries').then(function (r) { A.loading(false); A.toast(t('adm.tools.rebuilt', { n: r.records })); loadDashboard(); }).catch(fail);
+    });
+    $('#btnBackup').addEventListener('click', function () {
+      A.loading(true, 'common.loading');
+      call('adminRunBackup').then(function (r) { A.loading(false); A.toast(t('adm.tools.backedUp', { name: r.name })); }).catch(fail);
+    });
+
+    A.onLangChange(function () {
+      renderRole(); renderDashboard(); fillFilters(); renderRows(); renderActivity();
+      if (S.profile && !$('#profileModal').hidden && !S.editing) renderProfile();
+    });
+
+    document.addEventListener('DOMContentLoaded', function () { A.initLang(); boot(); });
+  })();
+  </script>
+</body>
+</html>

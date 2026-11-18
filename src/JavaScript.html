@@ -1,0 +1,549 @@
+<script>
+/* ===========================================================================
+   JavaScript.html – shared client core
+   - i18n engine (uses the central dictionary in Translations.html)
+   - google.script.run promise wrapper
+   - DOM / escaping helpers, modal, toast, loading overlay
+   - Registration form schema + field rendering + client validation
+     (shared by the public form and the admin "edit record" form)
+   =========================================================================== */
+(function (global) {
+  'use strict';
+
+  var BOOT = global.APP_BOOT || {};
+  var SETTINGS = BOOT.settings || {};
+  var LS_LANG = 'alumni2028_lang';
+  var App = global.App = { boot: BOOT, settings: SETTINGS, lang: 'gu' };
+  var langListeners = [];
+
+  /* ------------------------------------------------------------ storage */
+  function storageGet(k) { try { return global.localStorage.getItem(k); } catch (e) { return null; } }
+  function storageSet(k, v) {
+    try { if (v === null) global.localStorage.removeItem(k); else global.localStorage.setItem(k, v); } catch (e) { /* private mode */ }
+  }
+
+  /* --------------------------------------------------------------- i18n */
+  function dict() { return (global.I18N && global.I18N[App.lang]) || {}; }
+  function has(key) { return dict()[key] !== undefined; }
+  function t(key, params) {
+    var s = dict()[key];
+    if (s === undefined) { if (global.console) console.warn('i18n missing: ' + key); return key; }
+    if (params) s = s.replace(/\{(\w+)\}/g, function (m, p) { return params[p] !== undefined ? params[p] : m; });
+    return s;
+  }
+  function applyTranslations(root) {
+    root = root || document;
+    root.querySelectorAll('[data-i18n]').forEach(function (el) {
+      var ps = el.getAttribute('data-i18n-params');
+      var params = null; if (ps) { try { params = JSON.parse(ps); } catch (e) { params = null; } }
+      el.textContent = t(el.getAttribute('data-i18n'), params);
+    });
+    root.querySelectorAll('[data-i18n-placeholder]').forEach(function (el) { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder'))); });
+    root.querySelectorAll('[data-i18n-aria]').forEach(function (el) { el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria'))); });
+    root.querySelectorAll('[data-i18n-title]').forEach(function (el) { el.setAttribute('title', t(el.getAttribute('data-i18n-title'))); });
+    root.querySelectorAll('[data-school-name]').forEach(function (el) { el.textContent = schoolName(); });
+    root.querySelectorAll('[data-setting]').forEach(function (el) { el.textContent = SETTINGS[el.getAttribute('data-setting')] || '—'; });
+  }
+  function schoolName() {
+    return (App.lang === 'hi' ? SETTINGS.SCHOOL_NAME_HI : SETTINGS.SCHOOL_NAME_GU) || t('brand.fallbackName');
+  }
+  function setLang(lang, silent) {
+    if (!global.I18N || !global.I18N[lang]) lang = 'gu';
+    App.lang = lang;
+    document.documentElement.lang = lang;
+    storageSet(LS_LANG, lang);
+    document.querySelectorAll('[data-lang]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-lang') === lang)); });
+    var titleKey = document.body.getAttribute('data-title-key');
+    if (titleKey) document.title = t(titleKey);
+    applyTranslations(document);
+    if (!silent) langListeners.forEach(function (fn) { try { fn(lang); } catch (e) { console.error(e); } });
+  }
+  function onLangChange(fn) { langListeners.push(fn); }
+  function initLang() {
+    var saved = storageGet(LS_LANG);
+    setLang(saved === 'hi' ? 'hi' : 'gu', true);
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-lang]');
+      if (b) { e.preventDefault(); if (b.getAttribute('data-lang') !== App.lang) setLang(b.getAttribute('data-lang')); }
+    });
+  }
+
+  /* ---------------------------------------------------------------- api */
+  function api(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      if (!global.google || !google.script || !google.script.run) { reject({ code: 'OFFLINE' }); return; }
+      var runner = google.script.run
+        .withSuccessHandler(function (res) { resolve(res); })
+        .withFailureHandler(function (err) { reject({ code: 'NETWORK', message: err && err.message }); });
+      runner[fn].apply(runner, args);
+    });
+  }
+
+  /* ------------------------------------------------------------ helpers */
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  /** el('div', {class:'x', text:'safe text'}, [children]) – never uses innerHTML for data. */
+  function el(tag, attrs, children) {
+    var n = document.createElement(tag);
+    attrs = attrs || {};
+    Object.keys(attrs).forEach(function (k) {
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'text') n.textContent = v;
+      else if (k === 'class') n.className = v;
+      else if (k === 'dataset') Object.keys(v).forEach(function (d) { n.dataset[d] = v[d]; });
+      else if (k.indexOf('on') === 0 && typeof v === 'function') n.addEventListener(k.slice(2), v);
+      else if (v === true) n.setAttribute(k, '');
+      else n.setAttribute(k, v);
+    });
+    (children || []).forEach(function (c) { if (c !== null && c !== undefined) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return n;
+  }
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+  function debounce(fn, ms) { var h; return function () { var a = arguments, s = this; clearTimeout(h); h = setTimeout(function () { fn.apply(s, a); }, ms); }; }
+  function uuid() {
+    if (global.crypto && crypto.randomUUID) return crypto.randomUUID();
+    var b = new Uint8Array(16); (global.crypto || {}).getRandomValues ? crypto.getRandomValues(b) : b.forEach(function (_, i) { b[i] = Math.random() * 256 | 0; });
+    return Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('').replace(/^(.{8})(.{4})(.{4})(.{4})/, '$1-$2-$3-$4-');
+  }
+  function fmtNum(n) { return new Intl.NumberFormat('en-IN').format(Number(n) || 0); }
+  function fmtDate(iso, withTime) {
+    if (!iso) return '—';
+    var d = new Date(iso); if (isNaN(d)) return String(iso);
+    var p = function (x) { return ('0' + x).slice(-2); };
+    return p(d.getDate()) + '-' + p(d.getMonth() + 1) + '-' + d.getFullYear() + (withTime ? ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) : '');
+  }
+  function initials(name) {
+    var parts = String(name || '').trim().split(/\s+/);
+    return ((parts[0] || '').charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase() || '•';
+  }
+
+  var toastTimer;
+  function toast(msg) {
+    var n = $('#toast');
+    if (!n) { n = el('div', { id: 'toast', class: 'toast', role: 'status', 'aria-live': 'polite' }); document.body.appendChild(n); }
+    n.textContent = msg; n.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { n.hidden = true; }, 3800);
+  }
+  function loading(show, msgKey) {
+    var o = $('#loadingOverlay');
+    if (!o) return;
+    o.hidden = !show;
+    var m = $('#loadingMsg'); if (m && msgKey) { m.setAttribute('data-i18n', msgKey); m.textContent = t(msgKey); }
+  }
+  var lastFocus = null;
+  function openModal(id) {
+    var m = document.getElementById(id); if (!m) return;
+    lastFocus = document.activeElement; m.hidden = false;
+    var f = m.querySelector('.modal__close, button, [href], input'); if (f) f.focus();
+  }
+  function closeModal(id) {
+    var m = document.getElementById(id); if (!m) return;
+    m.hidden = true; if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  document.addEventListener('click', function (e) {
+    var c = e.target.closest('[data-close]'); if (c) closeModal(c.getAttribute('data-close'));
+    var o = e.target.closest('[data-open]'); if (o) { e.preventDefault(); openModal(o.getAttribute('data-open')); }
+    if (e.target.classList && e.target.classList.contains('modal')) closeModal(e.target.id);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') $$('.modal').forEach(function (m) { if (!m.hidden) closeModal(m.id); });
+  });
+
+  /* ---------------------------------------------------------- countries */
+  var COUNTRY = {};
+  (BOOT.countries || []).forEach(function (c) { COUNTRY[c[0]] = { dial: c[1], en: c[2] }; });
+  var dnCache = {};
+  function countryName(code) {
+    if (!code) return '';
+    try {
+      if (!dnCache[App.lang]) dnCache[App.lang] = new Intl.DisplayNames([App.lang + '-IN', App.lang], { type: 'region' });
+      var n = dnCache[App.lang].of(code);
+      if (n && n !== code) return n;
+    } catch (e) { /* older browsers */ }
+    return COUNTRY[code] ? COUNTRY[code].en : code;
+  }
+  function sortedCountries() {
+    var codes = Object.keys(COUNTRY).filter(function (c) { return c !== 'IN'; });
+    var coll = new Intl.Collator(App.lang);
+    codes.sort(function (a, b) { return coll.compare(countryName(a), countryName(b)); });
+    return ['IN'].concat(codes);
+  }
+  function fillCountrySelect(select, mode, value, placeholderKey) {
+    var cur = value !== undefined ? value : select.value;
+    select.textContent = '';
+    if (placeholderKey) select.appendChild(el('option', { value: '', text: t(placeholderKey) }));
+    sortedCountries().forEach(function (code) {
+      var label = mode === 'dial' ? '+' + COUNTRY[code].dial + ' ' + countryName(code) : countryName(code);
+      select.appendChild(el('option', { value: code, text: label }));
+    });
+    select.value = cur || (mode === 'dial' ? 'IN' : '');
+  }
+
+  /* ======================================================================
+     Registration form schema – single source of truth for the form, the
+     review screen and the admin editor. Labels: f.<name>, placeholders:
+     ph.<name>, help: help.<name>, options: <prefix><value>.
+     ====================================================================== */
+  var OPT = BOOT.options || {};
+  var NO_EMPLOYER = BOOT.occupationsWithoutEmployer || [];
+  function employerRequired(d) { return !!d.occupation && NO_EMPLOYER.indexOf(d.occupation) === -1; }
+
+  var STEPS = [
+    { id: 'personal', fields: [
+      { name: 'fullName', type: 'text', required: true, max: 100, pattern: 'name', autocomplete: 'name', full: true },
+      { name: 'gender', type: 'chips', required: true, options: OPT.GENDER, prefix: 'opt.gender.', full: true },
+      { name: 'dob', type: 'date' },
+      { name: 'fatherName', type: 'text', max: 100, pattern: 'name' },
+      { name: 'photo', type: 'photo', full: true, publicOnly: true }
+    ] },
+    { id: 'school', fields: [
+      { name: 'admissionYear', type: 'year', required: true },
+      { name: 'leavingYear', type: 'year', required: true },
+      { name: 'lastStandard', type: 'select', required: true, options: OPT.STANDARDS, prefix: 'opt.std.' },
+      { name: 'division', type: 'text', max: 10 },
+      { name: 'lcNumber', type: 'text', max: 30 },
+      { name: 'favouriteTeacher', type: 'text', max: 100 }
+    ] },
+    { id: 'contact', fields: [
+      { name: 'mobile', type: 'phone', required: true, autocomplete: 'tel-national' },
+      { name: 'whatsapp', type: 'phone', required: true, sameAs: 'mobile' },
+      { name: 'email', type: 'email', required: true, max: 120, autocomplete: 'email' },
+      { name: 'altPhone', type: 'phone' }
+    ] },
+    { id: 'location', fields: [
+      { name: 'countryCode', type: 'country', required: true },
+      { name: 'state', type: 'text', required: true, max: 80, list: 'indianStates', autocomplete: 'address-level1' },
+      { name: 'city', type: 'text', required: true, max: 80, autocomplete: 'address-level2' },
+      { name: 'postalCode', type: 'text', max: 12, autocomplete: 'postal-code' },
+      { name: 'address', type: 'textarea', max: 300, full: true, rows: 3 }
+    ] },
+    { id: 'profession', fields: [
+      { name: 'occupation', type: 'select', required: true, options: OPT.OCCUPATION, prefix: 'opt.occ.' },
+      { name: 'occupationOther', type: 'text', max: 80, required: true, showIf: function (d) { return d.occupation === 'OTHER'; } },
+      { name: 'organization', type: 'text', max: 120, requiredIf: employerRequired, autocomplete: 'organization' },
+      { name: 'designation', type: 'text', max: 100, requiredIf: employerRequired, autocomplete: 'organization-title' },
+      { name: 'professionalField', type: 'text', max: 100, requiredIf: employerRequired },
+      { name: 'website', type: 'url', max: 200 }
+    ] },
+    { id: 'achievements', fields: [
+      { name: 'achievements', type: 'textarea', max: 1000, full: true },
+      { name: 'awards', type: 'textarea', max: 1000, full: true },
+      { name: 'socialContributions', type: 'textarea', max: 1000, full: true },
+      { name: 'schoolMemory', type: 'textarea', max: 1000, full: true },
+      { name: 'messageForSchool', type: 'textarea', max: 1000, full: true },
+      { name: 'teachersRemembered', type: 'textarea', max: 1000, full: true }
+    ] },
+    { id: 'participation', fields: ['attendCentenary', 'attendReunion', 'volunteer', 'supportDevelopment', 'joinAssociation'].map(function (n) {
+      return { name: n, type: 'chips', required: true, options: OPT.PARTICIPATION, prefix: 'opt.part.', full: true };
+    }) },
+    { id: 'consent', publicOnly: true, fields: [
+      { name: 'consentStore', type: 'check', required: true, full: true },
+      { name: 'consentContact', type: 'check', required: true, full: true },
+      { name: 'consentDirectory', type: 'check', full: true },
+      { name: 'consentPrivacy', type: 'check', required: true, full: true, privacyLink: true }
+    ] }
+  ];
+
+  var INDIAN_STATES = ['Gujarat', 'Maharashtra', 'Rajasthan', 'Madhya Pradesh', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Telangana',
+    'Andhra Pradesh', 'Kerala', 'Uttar Pradesh', 'Bihar', 'West Bengal', 'Odisha', 'Punjab', 'Haryana', 'Himachal Pradesh',
+    'Uttarakhand', 'Jharkhand', 'Chhattisgarh', 'Goa', 'Assam', 'Arunachal Pradesh', 'Manipur', 'Meghalaya', 'Mizoram',
+    'Nagaland', 'Sikkim', 'Tripura', 'Jammu and Kashmir', 'Ladakh', 'Chandigarh', 'Puducherry',
+    'Dadra and Nagar Haveli and Daman and Diu', 'Lakshadweep', 'Andaman and Nicobar Islands'];
+
+  function allFields() { var a = []; STEPS.forEach(function (s) { a = a.concat(s.fields); }); return a; }
+  function fieldByName(n) { return allFields().filter(function (f) { return f.name === n; })[0]; }
+  function isVisible(f, d) { return !f.showIf || f.showIf(d); }
+  function isRequired(f, d) { return isVisible(f, d) && (f.required || (f.requiredIf ? f.requiredIf(d) : false)); }
+
+  /* ------------------------------------------------------------ render */
+  function yearsList() {
+    var out = [], max = BOOT.currentYear || new Date().getFullYear();
+    for (var y = max; y >= (BOOT.foundingYear || 1928); y--) out.push(String(y));
+    return out;
+  }
+  function labelFor(f, ctx) {
+    var id = (ctx.prefix || 'f') + '-' + f.name;
+    var lab = el('label', { class: 'field__label', for: f.type === 'chips' ? null : (f.type === 'phone' && ctx.mode !== 'admin' ? id + '-num' : id) },
+      [el('span', { 'data-i18n': 'f.' + f.name, text: t('f.' + f.name) })]);
+    lab.appendChild(el('span', { class: 'req', 'aria-hidden': 'true', 'data-req': f.name, text: '*' }));
+    lab.appendChild(el('span', { class: 'opt', 'data-opt': f.name, 'data-i18n': 'common.optional', text: t('common.optional') }));
+    if (f.type === 'chips') lab.id = id + '-label';
+    return lab;
+  }
+  function placeholderAttr(name) { return has('ph.' + name) ? 'ph.' + name : null; }
+
+  /** Builds the DOM for one field. ctx: {mode:'public'|'admin', prefix} */
+  function renderField(f, ctx) {
+    var id = (ctx.prefix || 'f') + '-' + f.name;
+    var wrap = el('div', { class: 'field' + (f.full || f.type === 'textarea' ? ' field--full' : ''), 'data-field': f.name });
+    var errId = id + '-err';
+    var control;
+    var common = { id: id, name: f.name, 'aria-describedby': errId + (has('help.' + f.name) ? ' ' + id + '-help' : '') };
+
+    if (f.type !== 'check') wrap.appendChild(labelFor(f, ctx));
+
+    switch (f.type) {
+      case 'text': case 'email': case 'url':
+        control = el('input', Object.assign({}, common, {
+          class: 'input', type: f.type === 'text' ? 'text' : f.type, maxlength: f.max, autocomplete: f.autocomplete || 'off',
+          inputmode: f.type === 'email' ? 'email' : (f.type === 'url' ? 'url' : null), list: f.list || null,
+          'data-i18n-placeholder': placeholderAttr(f.name), placeholder: placeholderAttr(f.name) ? t('ph.' + f.name) : null,
+          spellcheck: f.type === 'text' ? null : 'false'
+        }));
+        wrap.appendChild(control);
+        break;
+      case 'textarea':
+        control = el('textarea', Object.assign({}, common, { class: 'textarea', maxlength: f.max, rows: f.rows || 4,
+          'data-i18n-placeholder': placeholderAttr(f.name), placeholder: placeholderAttr(f.name) ? t('ph.' + f.name) : null }));
+        wrap.appendChild(control);
+        var counter = el('div', { class: 'counter', 'data-counter': f.name, text: '0 / ' + f.max });
+        control.addEventListener('input', function () { counter.textContent = control.value.length + ' / ' + f.max; });
+        wrap.appendChild(counter);
+        break;
+      case 'date':
+        control = el('input', Object.assign({}, common, { class: 'input', type: 'date', max: new Date().toISOString().slice(0, 10), min: '1900-01-01', autocomplete: 'bday' }));
+        wrap.appendChild(control);
+        break;
+      case 'select': case 'year':
+        control = el('select', Object.assign({}, common, { class: 'select' }));
+        control.appendChild(el('option', { value: '', 'data-i18n': 'common.select', text: t('common.select') }));
+        (f.type === 'year' ? yearsList() : f.options).forEach(function (o) {
+          control.appendChild(f.type === 'year' ? el('option', { value: o, text: o }) : el('option', { value: o, 'data-i18n': f.prefix + o, text: t(f.prefix + o) }));
+        });
+        wrap.appendChild(control);
+        break;
+      case 'country':
+        control = el('select', Object.assign({}, common, { class: 'select', 'data-country-select': 'name', autocomplete: 'country' }));
+        fillCountrySelect(control, 'name', '', 'common.selectCountry');
+        wrap.appendChild(control);
+        break;
+      case 'phone':
+        if (ctx.mode === 'admin') {
+          control = el('input', Object.assign({}, common, { class: 'input', type: 'tel', inputmode: 'tel', placeholder: '+91XXXXXXXXXX' }));
+          wrap.appendChild(control);
+        } else {
+          var sel = el('select', { class: 'select', name: f.name + 'Country', id: id + '-cc', 'data-country-select': 'dial', 'data-i18n-aria': 'common.countryCode', 'aria-label': t('common.countryCode'), autocomplete: 'tel-country-code' });
+          fillCountrySelect(sel, 'dial', 'IN');
+          control = el('input', { class: 'input', type: 'tel', inputmode: 'tel', name: f.name + 'Number', id: id + '-num', maxlength: 18,
+            autocomplete: f.autocomplete || 'off', 'aria-describedby': errId, 'data-i18n-placeholder': 'ph.phone', placeholder: t('ph.phone') });
+          wrap.appendChild(el('div', { class: 'phone' }, [sel, control]));
+          if (f.sameAs) {
+            var cb = el('input', { type: 'checkbox', 'data-same-as': f.sameAs, id: id + '-same' });
+            wrap.appendChild(el('label', { class: 'inline-check', for: id + '-same' }, [cb, el('span', { 'data-i18n': 'f.sameAsMobile', text: t('f.sameAsMobile') })]));
+          }
+        }
+        break;
+      case 'chips':
+        control = el('div', { class: 'chips', role: 'radiogroup', 'aria-labelledby': id + '-label', id: id });
+        f.options.forEach(function (o) {
+          control.appendChild(el('label', { class: 'chip' }, [
+            el('input', { type: 'radio', name: f.name, value: o, 'aria-describedby': errId }),
+            el('span', { 'data-i18n': f.prefix + o, text: t(f.prefix + o) })
+          ]));
+        });
+        wrap.appendChild(control);
+        break;
+      case 'check':
+        var input = el('input', { type: 'checkbox', name: f.name, id: id, 'aria-describedby': errId });
+        var text = el('span', null, [el('span', { 'data-i18n': 'f.' + f.name, text: t('f.' + f.name) })]);
+        if (f.required) text.appendChild(el('span', { class: 'req', 'aria-hidden': 'true', text: '*' }));
+        else text.appendChild(el('span', { class: 'opt', 'data-i18n': 'common.optional', text: t('common.optional') }));
+        if (f.privacyLink) {
+          text.appendChild(document.createTextNode(' '));
+          text.appendChild(el('button', { type: 'button', class: 'link-btn', 'data-open': 'privacyModal', 'data-i18n': 'consent.readPolicy', text: t('consent.readPolicy') }));
+        }
+        wrap.appendChild(el('label', { class: 'check', for: id }, [input, text]));
+        control = input;
+        break;
+      case 'photo':
+        wrap.appendChild(el('div', { class: 'upload' }, [
+          el('div', { class: 'upload__preview', id: id + '-preview', 'aria-hidden': 'true' }, [svgIcon('user')]),
+          el('div', { class: 'upload__body' }, [
+            el('input', { type: 'file', id: id, accept: (BOOT.allowedPhotoTypes || []).join(','), class: 'sr-only', 'aria-describedby': errId + ' ' + id + '-help' }),
+            el('label', { for: id, class: 'btn btn--light btn--sm', 'data-i18n': 'photo.choose', text: t('photo.choose') }),
+            el('button', { type: 'button', class: 'btn btn--sm link-btn', id: id + '-remove', hidden: true, 'data-i18n': 'photo.remove', text: t('photo.remove') }),
+            el('p', { class: 'field__help', id: id + '-help', 'data-i18n': 'help.photo', 'data-i18n-params': JSON.stringify({ mb: SETTINGS.MAX_PHOTO_MB || 2 }), text: t('help.photo', { mb: SETTINGS.MAX_PHOTO_MB || 2 }) }),
+            el('label', { class: 'inline-check', id: id + '-consentWrap', hidden: true, for: id + '-consent' }, [
+              el('input', { type: 'checkbox', name: 'consentPhoto', id: id + '-consent' }),
+              el('span', { 'data-i18n': 'f.consentPhoto', text: t('f.consentPhoto') })
+            ]),
+            el('p', { class: 'field__error', id: (ctx.prefix || 'f') + '-consentPhoto-err', 'data-error-for': 'consentPhoto', 'aria-live': 'polite' })
+          ])
+        ]));
+        break;
+    }
+    if (has('help.' + f.name) && f.type !== 'photo') wrap.appendChild(el('p', { class: 'field__help', id: id + '-help', 'data-i18n': 'help.' + f.name, text: t('help.' + f.name) }));
+    wrap.appendChild(el('p', { class: 'field__error', id: errId, 'data-error-for': f.name, 'aria-live': 'polite' }));
+    return wrap;
+  }
+
+  /** Reads values for the given fields from a form element. */
+  function readValues(form, fields, mode) {
+    var d = {};
+    fields.forEach(function (f) {
+      if (f.type === 'photo') return;
+      if (f.type === 'chips') { var c = form.querySelector('input[name="' + f.name + '"]:checked'); d[f.name] = c ? c.value : ''; return; }
+      if (f.type === 'check') { var b = form.querySelector('input[name="' + f.name + '"]'); d[f.name] = !!(b && b.checked); return; }
+      if (f.type === 'phone' && mode !== 'admin') {
+        d[f.name + 'Country'] = (form.querySelector('[name="' + f.name + 'Country"]') || {}).value || 'IN';
+        d[f.name + 'Number'] = ((form.querySelector('[name="' + f.name + 'Number"]') || {}).value || '').trim();
+        return;
+      }
+      var n = form.querySelector('[name="' + f.name + '"]');
+      d[f.name] = n ? String(n.value).trim() : '';
+    });
+    return d;
+  }
+  function writeValues(form, fields, d, mode) {
+    fields.forEach(function (f) {
+      if (f.type === 'photo') return;
+      if (f.type === 'chips') { $$('input[name="' + f.name + '"]', form).forEach(function (r) { r.checked = r.value === d[f.name]; }); return; }
+      if (f.type === 'check') { var b = form.querySelector('input[name="' + f.name + '"]'); if (b) b.checked = !!d[f.name]; return; }
+      if (f.type === 'phone' && mode !== 'admin') {
+        var s = form.querySelector('[name="' + f.name + 'Country"]'); if (s && d[f.name + 'Country']) s.value = d[f.name + 'Country'];
+        var i = form.querySelector('[name="' + f.name + 'Number"]'); if (i) i.value = d[f.name + 'Number'] || '';
+        return;
+      }
+      var n = form.querySelector('[name="' + f.name + '"]');
+      if (n && d[f.name] !== undefined && d[f.name] !== null) {
+        n.value = String(d[f.name]);
+        if (n.tagName === 'TEXTAREA') n.dispatchEvent(new Event('input'));
+      }
+    });
+  }
+
+  /* --------------------------------------------------------- validation */
+  var RE = {
+    name: /^[\p{L}\p{M}][\p{L}\p{M}\s.'’\-]*$/u,
+    email: /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/,
+    url: /^(https?:\/\/)?[^\s<>"'`]+\.[^\s<>"'`]{2,}$/i,
+    postal: /^[A-Za-z0-9][A-Za-z0-9 \-]{1,11}$/,
+    division: /^[\p{L}\p{M}\p{N} \-]{1,10}$/u,
+    lc: /^[\p{L}\p{M}\p{N} \/.\-]{1,30}$/u,
+    e164: /^\+[1-9]\d{6,14}$/
+  };
+  function phoneError(iso, raw) {
+    var c = COUNTRY[iso]; if (!c) return 'phoneInvalid';
+    var digits = String(raw || '').replace(/[\s().\-]/g, '');
+    if (digits.charAt(0) === '+') { digits = digits.slice(1); if (digits.indexOf(c.dial) !== 0) return 'phoneInvalid'; digits = digits.slice(c.dial.length); }
+    if (!/^\d+$/.test(digits)) return 'phoneInvalid';
+    if (c.dial === '91') return /^[6-9]\d{9}$/.test(digits.replace(/^0+/, '')) ? '' : 'phoneInvalid';
+    if (iso !== 'IT') digits = digits.replace(/^0+/, '');
+    var full = c.dial + digits;
+    return digits.length < 4 || digits.length > 14 || full.length > 15 || full.length < 7 ? 'phoneInvalid' : '';
+  }
+  /** @return {string} error code or '' */
+  function validateField(f, d, mode) {
+    if (!isVisible(f, d)) return '';
+    var req = isRequired(f, d);
+    if (f.type === 'check') return req && !d[f.name] ? 'consentRequired' : '';
+    if (f.type === 'photo') return '';
+    if (f.type === 'phone' && mode !== 'admin') {
+      var num = d[f.name + 'Number'];
+      if (!num) return req ? 'required' : '';
+      return phoneError(d[f.name + 'Country'], num);
+    }
+    var v = d[f.name];
+    if (v === '' || v === undefined || v === null) return req ? 'required' : '';
+    v = String(v);
+    if (f.max && v.length > f.max) return 'tooLong';
+    if (f.type === 'phone') return RE.e164.test(v.replace(/[\s().\-]/g, '')) ? '' : 'phoneInvalid';
+    if (f.pattern === 'name' && (!RE.name.test(v) || v.length < 2)) return 'invalid';
+    if (f.type === 'email' && !RE.email.test(v)) return 'emailInvalid';
+    if (f.type === 'url' && !RE.url.test(v)) return 'invalid';
+    if (f.name === 'postalCode' && !RE.postal.test(v)) return 'invalid';
+    if (f.name === 'division' && !RE.division.test(v)) return 'invalid';
+    if (f.name === 'lcNumber' && !RE.lc.test(v)) return 'invalid';
+    if (f.name === 'dob') { var dd = new Date(v); if (isNaN(dd) || dd > new Date() || dd.getFullYear() < 1900) return 'invalid'; }
+    if (f.name === 'leavingYear' && d.admissionYear) {
+      if (Number(v) < Number(d.admissionYear)) return 'yearOrder';
+      if (Number(v) - Number(d.admissionYear) > 15) return 'yearRange';
+    }
+    return '';
+  }
+  function showError(form, name, code) {
+    var p = form.querySelector('[data-error-for="' + name + '"]');
+    var wrap = form.querySelector('[data-field="' + name + '"]');
+    if (p) p.textContent = code ? t('err.' + code) : '';
+    if (p) p.setAttribute('data-code', code || '');
+    if (wrap) wrap.classList.toggle('is-invalid', !!code);
+    var inputs = wrap ? $$('input, select, textarea', wrap) : [];
+    inputs.forEach(function (i) { if (i.type !== 'checkbox' || name.indexOf('consent') === 0) i.setAttribute('aria-invalid', code ? 'true' : 'false'); });
+  }
+  /** Re-translate visible error messages after a language switch. */
+  function retranslateErrors(root) {
+    $$('[data-error-for]', root).forEach(function (p) { var c = p.getAttribute('data-code'); p.textContent = c ? t('err.' + c) : ''; });
+  }
+  /** Toggles visibility + required markers for conditional fields. */
+  function refreshConditional(form, fields, d) {
+    fields.forEach(function (f) {
+      var w = form.querySelector('[data-field="' + f.name + '"]'); if (!w) return;
+      w.hidden = !isVisible(f, d);
+      var r = isRequired(f, d);
+      $$('[data-req="' + f.name + '"]', w).forEach(function (x) { x.hidden = !r; });
+      $$('[data-opt="' + f.name + '"]', w).forEach(function (x) { x.hidden = r; });
+    });
+  }
+
+  /** Human-readable value for review / admin profile. */
+  function displayValue(f, d, mode) {
+    if (f.type === 'check') return d[f.name] ? t('common.yes') : t('common.no');
+    if (f.type === 'phone' && mode !== 'admin') {
+      return d[f.name + 'Number'] ? '+' + (COUNTRY[d[f.name + 'Country']] || {}).dial + ' ' + d[f.name + 'Number'] : '—';
+    }
+    var v = d[f.name];
+    if (v === '' || v === undefined || v === null) return '—';
+    if (f.prefix) return t(f.prefix + v);
+    if (f.type === 'country') return countryName(v);
+    if (f.type === 'date') return fmtDate(v);
+    return String(v);
+  }
+
+  /* --------------------------------------------------------------- icons */
+  var ICONS = {
+    user: '<path d="M12 12a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0 2c-4.4 0-8 2.5-8 5.5V21h16v-1.5c0-3-3.6-5.5-8-5.5Z"/>',
+    check: '<path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>',
+    book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Zm2.5 13H20V21H6.5a1.25 1.25 0 0 1 0-2.5Z"/>',
+    columns: '<path d="M12 2 2 7v2h20V7L12 2ZM4 11h3v7H4v-7Zm6.5 0h3v7h-3v-7Zm6.5 0h3v7h-3v-7ZM2 20h20v2H2v-2Z"/>',
+    award: '<path d="M12 2a7 7 0 0 0-4 12.74V22l4-2 4 2v-7.26A7 7 0 0 0 12 2Zm0 3 1.3 2.7 3 .4-2.2 2.1.5 3-2.6-1.4-2.6 1.4.5-3-2.2-2.1 3-.4L12 5Z"/>',
+    pin: '<path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z"/>',
+    phone: '<path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1L6.6 10.8Z"/>',
+    mail: '<path d="M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm9 7.2L4 7.3V17h16V7.3l-8 4.9ZM5.2 7 12 11.1 18.8 7H5.2Z"/>',
+    globe: '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm6.9 6h-3a15.6 15.6 0 0 0-1.4-4A8 8 0 0 1 18.9 8ZM12 4.1A13.7 13.7 0 0 1 13.9 8h-3.8A13.7 13.7 0 0 1 12 4.1ZM4.3 14a8 8 0 0 1 0-4h3.4a16.5 16.5 0 0 0 0 4H4.3Zm.8 2h3a15.6 15.6 0 0 0 1.4 4A8 8 0 0 1 5.1 16Zm3-8h-3a8 8 0 0 1 4.4-4A15.6 15.6 0 0 0 8.1 8ZM12 19.9A13.7 13.7 0 0 1 10.1 16h3.8A13.7 13.7 0 0 1 12 19.9Zm2.3-5.9H9.7a14.6 14.6 0 0 1 0-4h4.6a14.6 14.6 0 0 1 0 4Zm.2 6a15.6 15.6 0 0 0 1.4-4h3a8 8 0 0 1-4.4 4Zm1.8-6a16.5 16.5 0 0 0 0-4h3.4a8 8 0 0 1 0 4h-3.4Z"/>'
+  };
+  function svgIcon(name) {
+    var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'currentColor'); s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = ICONS[name] || ''; // static, trusted markup only
+    return s;
+  }
+  function hydrateIcons(root) { $$('[data-icon]', root).forEach(function (n) { if (!n.firstChild) n.appendChild(svgIcon(n.getAttribute('data-icon'))); }); }
+
+  /* -------------------------------------------------------------- export */
+  Object.assign(App, {
+    t: t, has: has, setLang: setLang, onLangChange: onLangChange, initLang: initLang, applyTranslations: applyTranslations,
+    schoolName: schoolName, api: api, esc: esc, el: el, $: $, $$: $$, debounce: debounce, uuid: uuid, fmtNum: fmtNum,
+    fmtDate: fmtDate, initials: initials, toast: toast, loading: loading, openModal: openModal, closeModal: closeModal,
+    storageGet: storageGet, storageSet: storageSet, COUNTRY: COUNTRY, countryName: countryName, fillCountrySelect: fillCountrySelect,
+    STEPS: STEPS, INDIAN_STATES: INDIAN_STATES, allFields: allFields, fieldByName: fieldByName, isVisible: isVisible, isRequired: isRequired,
+    renderField: renderField, readValues: readValues, writeValues: writeValues, validateField: validateField, showError: showError,
+    retranslateErrors: retranslateErrors, refreshConditional: refreshConditional, displayValue: displayValue,
+    svgIcon: svgIcon, hydrateIcons: hydrateIcons
+  });
+
+  /** Re-label country dropdowns whenever the language changes. */
+  onLangChange(function () {
+    $$('select[data-country-select]').forEach(function (s) {
+      var mode = s.getAttribute('data-country-select');
+      fillCountrySelect(s, mode, s.value, mode === 'name' ? 'common.selectCountry' : null);
+    });
+    retranslateErrors(document);
+  });
+})(window);
+</script>

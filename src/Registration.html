@@ -1,0 +1,410 @@
+<!-- =========================================================================
+     Registration.html – multi-step alumni registration (markup + logic)
+     Fields are generated from App.STEPS (JavaScript.html) so the form,
+     review screen and admin editor always stay in sync.
+     ========================================================================= -->
+<section class="register" id="register" aria-labelledby="regTitle">
+  <div class="container register__shell">
+    <div class="register__top no-print">
+      <button class="btn btn--light btn--sm" type="button" data-action="home" data-i18n="reg.back"></button>
+      <span class="draft-note" id="draftNote" hidden aria-live="polite">✓ <span data-i18n="reg.draftSaved"></span></span>
+    </div>
+
+    <!-- Form view -->
+    <div id="regFormView">
+      <h1 class="register__title" id="regTitle" data-i18n="reg.title"></h1>
+      <p class="section__lead" data-i18n="reg.lead"></p>
+      <div class="alert alert--info" id="draftRestored" hidden>
+        <span><span data-i18n="reg.draftRestored"></span> <button type="button" class="link-btn" id="draftDiscard" data-i18n="reg.startFresh"></button></span>
+      </div>
+      <div class="alert alert--info" id="regClosed" hidden data-i18n="reg.closed"></div>
+
+      <ol class="stepper" id="stepper" aria-label="Progress"></ol>
+      <div class="progress" role="progressbar" aria-valuemin="1" aria-valuemax="9" id="progress"><div class="progress__bar" id="progressBar"></div></div>
+      <p class="step-count" id="stepCount" aria-live="polite" data-i18n="reg.stepOf"></p>
+
+      <div class="form-card">
+        <div class="alert alert--err" id="formError" hidden role="alert" tabindex="-1"></div>
+        <form id="regForm" novalidate autocomplete="on">
+          <!-- Honeypot (bots fill this, humans never see it) -->
+          <div class="sr-only" aria-hidden="true"><label>Website <input type="text" name="hp" tabindex="-1" autocomplete="off"></label></div>
+          <div id="stepsHost"></div>
+          <section class="step" id="reviewStep" hidden aria-labelledby="reviewTitle">
+            <h2 class="step__title" id="reviewTitle" data-i18n="review.title"></h2>
+            <p class="step__hint" data-i18n="review.hint"></p>
+            <div class="review" id="reviewBody"></div>
+          </section>
+          <div class="form-nav">
+            <button type="button" class="btn btn--light" id="btnPrev" data-i18n="common.prev"></button>
+            <button type="button" class="btn btn--primary" id="btnNext" data-i18n="common.next"></button>
+            <button type="submit" class="btn btn--primary" id="btnSubmit" hidden data-i18n="reg.submit"></button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Success view -->
+    <div id="regSuccessView" hidden>
+      <div class="form-card success" role="status" aria-live="polite">
+        <div class="success__seal" data-icon="check"></div>
+        <h1 class="register__title" data-i18n="success.title" style="margin-bottom:14px"></h1>
+        <p class="success__msg" id="successMessage" data-i18n="success.message"></p>
+        <div class="reg-id">
+          <div class="reg-id__label" data-i18n="success.idLabel"></div>
+          <div class="reg-id__value" id="successId"></div>
+        </div>
+        <p class="field__help" style="margin-top:14px" data-i18n="success.keepId"></p>
+        <p class="alert alert--ok" id="successEmail" hidden style="justify-content:center" data-i18n="success.emailSent"></p>
+        <div class="success__actions no-print">
+          <button class="btn btn--gold" type="button" id="btnCopyId" data-i18n="success.copy"></button>
+          <button class="btn btn--light" type="button" id="btnPrintId" data-i18n="success.print"></button>
+          <button class="btn btn--primary" type="button" data-action="home" data-i18n="success.home"></button>
+        </div>
+        <p style="margin-top:18px" class="no-print"><button class="link-btn" type="button" id="btnAnother" data-i18n="success.another"></button></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+  var A = window.App, t = A.t, el = A.el, $ = A.$, $$ = A.$$;
+  var STEPS = A.STEPS;
+  var FIELDS = A.allFields();
+  var TOTAL = STEPS.length + 1; // + review
+  var DRAFT_KEY = 'alumni2028_draft_v1';
+  var MAX_PHOTO_BYTES = (Number(A.settings.MAX_PHOTO_MB) || 2) * 1024 * 1024;
+  var state = { step: 0, maxStep: 0, photo: null, token: A.uuid(), submitting: false, initialised: false };
+  var form, host;
+
+  /* ---------------------------------------------------------- build */
+  function build() {
+    form = $('#regForm'); host = $('#stepsHost');
+    var stepper = $('#stepper');
+    STEPS.concat([{ id: 'review' }]).forEach(function (s, i) {
+      stepper.appendChild(el('li', { 'data-goto': String(i) }, [
+        el('span', { class: 'stepper__dot', text: String(i + 1) }),
+        el('span', { class: 'stepper__label', 'data-i18n': 'step.' + s.id, text: t('step.' + s.id) })
+      ]));
+    });
+    STEPS.forEach(function (s, i) {
+      var fs = el('fieldset', { class: 'step', 'data-step': String(i), hidden: i !== 0 });
+      fs.appendChild(el('legend', { class: 'step__title', 'data-i18n': 'step.' + s.id + '.title', text: t('step.' + s.id + '.title') }));
+      fs.appendChild(el('p', { class: 'step__hint', 'data-i18n': 'step.' + s.id + '.hint', text: t('step.' + s.id + '.hint') }));
+      var grid = el('div', { class: 'fields' });
+      s.fields.forEach(function (f) { grid.appendChild(A.renderField(f, { mode: 'public', prefix: 'f' })); });
+      fs.appendChild(grid);
+      host.appendChild(fs);
+    });
+    wire();
+    A.refreshConditional(form, FIELDS, values());
+  }
+
+  function values() { return A.readValues(form, FIELDS, 'public'); }
+  function stepFields(i) { return STEPS[i] ? STEPS[i].fields : []; }
+  function stepOfField(name) {
+    for (var i = 0; i < STEPS.length; i++) if (STEPS[i].fields.some(function (f) { return f.name === name || (name === 'consentPhoto' && f.name === 'photo'); })) return i;
+    return 0;
+  }
+
+  /* --------------------------------------------------------- events */
+  function wire() {
+    form.addEventListener('input', onEdit);
+    form.addEventListener('change', onEdit);
+    $('#btnNext').addEventListener('click', next);
+    $('#btnPrev').addEventListener('click', prev);
+    form.addEventListener('submit', function (e) { e.preventDefault(); submit(); });
+    $('#stepper').addEventListener('click', function (e) {
+      var li = e.target.closest('[data-goto]'); if (!li) return;
+      var i = Number(li.getAttribute('data-goto'));
+      if (i <= state.maxStep && i !== state.step) go(i);
+    });
+    // same-as-mobile for WhatsApp
+    $$('[data-same-as]', form).forEach(function (cb) {
+      cb.addEventListener('change', syncSameAs);
+    });
+    // photo
+    var file = $('#f-photo');
+    file.addEventListener('change', function () { if (file.files && file.files[0]) handlePhoto(file.files[0]); });
+    $('#f-photo-remove').addEventListener('click', clearPhoto);
+    $('#draftDiscard').addEventListener('click', function () { clearDraft(); resetForm(); });
+    $('#btnCopyId').addEventListener('click', copyId);
+    $('#btnPrintId').addEventListener('click', function () { window.print(); });
+    $('#btnAnother').addEventListener('click', function () { resetForm(); showForm(); });
+    // Country change → toggle Indian state suggestions
+    $('#f-countryCode').addEventListener('change', function () {
+      $('#f-state').setAttribute('list', this.value === 'IN' ? 'indianStates' : '');
+    });
+  }
+
+  function syncSameAs() {
+    $$('[data-same-as]', form).forEach(function (cb) {
+      var src = cb.getAttribute('data-same-as'), dst = cb.id.replace(/^f-/, '').replace(/-same$/, '');
+      var sc = form.querySelector('[name="' + src + 'Country"]'), sn = form.querySelector('[name="' + src + 'Number"]');
+      var dc = form.querySelector('[name="' + dst + 'Country"]'), dn = form.querySelector('[name="' + dst + 'Number"]');
+      if (cb.checked) { dc.value = sc.value; dn.value = sn.value; }
+      dc.disabled = dn.disabled = cb.checked;
+    });
+  }
+
+  function saveDraftNow() {
+    if (!state.initialised || !$('#regSuccessView').hidden) return;
+    var d = values(); d._step = state.step; d._sameAs = !!($('#f-whatsapp-same') || {}).checked;
+    A.storageSet(DRAFT_KEY, JSON.stringify(d));
+    var n = $('#draftNote'); n.hidden = false; clearTimeout(n._h); n._h = setTimeout(function () { n.hidden = true; }, 2500);
+  }
+  var saveDraft = A.debounce(saveDraftNow, 700);
+  window.addEventListener('pagehide', saveDraftNow); // never lose typing on close / reload
+
+  function onEdit(e) {
+    if (e.target.name === 'hp') return;
+    syncSameAs();
+    var d = values();
+    A.refreshConditional(form, FIELDS, d);
+    var wrap = e.target.closest('[data-field]');
+    if (wrap && wrap.classList.contains('is-invalid')) {
+      var f = A.fieldByName(wrap.getAttribute('data-field'));
+      if (f) A.showError(form, f.name, A.validateField(f, d, 'public'));
+    }
+    if (e.target.name === 'consentPhoto') A.showError(form, 'consentPhoto', '');
+    if (e.target.type !== 'file') saveDraft();
+  }
+
+  /* ----------------------------------------------------- navigation */
+  function validateStep(i) {
+    var d = values(), firstBad = null;
+    stepFields(i).forEach(function (f) {
+      var code = A.validateField(f, d, 'public');
+      A.showError(form, f.name, code);
+      if (code && !firstBad) firstBad = f.name;
+    });
+    if (i === 0 && state.photo && !(form.querySelector('[name="consentPhoto"]') || {}).checked) {
+      A.showError(form, 'consentPhoto', 'consentRequired');
+      firstBad = firstBad || 'consentPhoto';
+    }
+    if (firstBad) {
+      var w = form.querySelector('[data-field="' + firstBad + '"]') || $('#f-photo-consent');
+      var focusable = w && (w.matches('input') ? w : w.querySelector('input:not([type=hidden]):not([disabled]), select, textarea'));
+      if (focusable) focusable.focus({ preventScroll: true });
+      if (w) w.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    return !firstBad;
+  }
+  function next() {
+    hideFormError();
+    if (!validateStep(state.step)) return;
+    go(state.step + 1);
+  }
+  function prev() { hideFormError(); if (state.step > 0) go(state.step - 1); }
+  function go(i) {
+    state.step = Math.max(0, Math.min(TOTAL - 1, i));
+    state.maxStep = Math.max(state.maxStep, state.step);
+    $$('.step', host).forEach(function (s) { s.hidden = Number(s.getAttribute('data-step')) !== state.step; });
+    var isReview = state.step === TOTAL - 1;
+    $('#reviewStep').hidden = !isReview;
+    if (isReview) renderReview();
+    $('#btnPrev').style.visibility = state.step === 0 ? 'hidden' : 'visible';
+    $('#btnNext').hidden = isReview;
+    $('#btnSubmit').hidden = !isReview;
+    updateProgress();
+    var top = $('#regTitle'); if (top) top.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    saveDraft();
+  }
+  function updateProgress() {
+    $$('#stepper li').forEach(function (li, i) {
+      li.classList.toggle('is-active', i === state.step);
+      li.classList.toggle('is-done', i < state.step || (i <= state.maxStep && i !== state.step));
+      if (i === state.step) li.setAttribute('aria-current', 'step'); else li.removeAttribute('aria-current');
+    });
+    $('#progressBar').style.width = ((state.step + 1) / TOTAL * 100) + '%';
+    $('#progress').setAttribute('aria-valuenow', String(state.step + 1));
+    var sc = $('#stepCount');
+    sc.setAttribute('data-i18n-params', JSON.stringify({ n: state.step + 1, total: TOTAL }));
+    sc.textContent = t('reg.stepOf', { n: state.step + 1, total: TOTAL });
+  }
+
+  /* --------------------------------------------------------- review */
+  function renderReview() {
+    var d = values(), body = $('#reviewBody');
+    body.textContent = '';
+    STEPS.forEach(function (s, i) {
+      var dl = el('dl');
+      s.fields.forEach(function (f) {
+        if (!A.isVisible(f, d)) return;
+        var val = f.type === 'photo' ? (state.photo ? t('review.photoAttached') : '—') : A.displayValue(f, d, 'public');
+        dl.appendChild(el('dt', { text: t('f.' + f.name) }));
+        dl.appendChild(el('dd', { text: val }));
+      });
+      body.appendChild(el('div', { class: 'review__group' }, [
+        el('div', { class: 'review__head' }, [
+          el('h3', { text: t('step.' + s.id + '.title') }),
+          el('button', { type: 'button', class: 'btn btn--light btn--sm', text: t('common.edit'), onclick: function () { go(i); } })
+        ]), dl
+      ]));
+    });
+  }
+
+  /* ---------------------------------------------------------- photo */
+  function handlePhoto(file) {
+    A.showError(form, 'photo', '');
+    var allowed = A.boot.allowedPhotoTypes || ['image/jpeg', 'image/png', 'image/webp'];
+    if (allowed.indexOf(file.type) === -1) { A.showError(form, 'photo', 'fileType'); clearPhoto(true); return; }
+    if (file.size > 15 * 1024 * 1024) { A.showError(form, 'photo', 'fileSize'); clearPhoto(true); return; }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var img = new Image();
+      img.onload = function () {
+        // Downscale to max 900px and re-encode as JPEG to keep uploads small.
+        var max = 900, scale = Math.min(1, max / Math.max(img.width, img.height));
+        var c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+        var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        var url = c.toDataURL('image/jpeg', 0.85);
+        var b64 = url.split(',')[1];
+        if (b64.length * 3 / 4 > MAX_PHOTO_BYTES) { A.showError(form, 'photo', 'fileSize'); clearPhoto(true); return; }
+        state.photo = { name: 'photo.jpg', mimeType: 'image/jpeg', data: b64 };
+        var pv = $('#f-photo-preview'); pv.textContent = ''; pv.appendChild(el('img', { src: url, alt: '' }));
+        $('#f-photo-consentWrap').hidden = false; $('#f-photo-remove').hidden = false;
+      };
+      img.onerror = function () { A.showError(form, 'photo', 'fileType'); clearPhoto(true); };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function clearPhoto(keepError) {
+    state.photo = null;
+    $('#f-photo').value = '';
+    var pv = $('#f-photo-preview'); pv.textContent = ''; pv.appendChild(A.svgIcon('user'));
+    $('#f-photo-consentWrap').hidden = true; $('#f-photo-remove').hidden = true;
+    var c = $('#f-photo-consent'); if (c) c.checked = false;
+    A.showError(form, 'consentPhoto', '');
+    if (keepError !== true) A.showError(form, 'photo', '');
+  }
+
+  /* --------------------------------------------------------- submit */
+  function showFormError(key, params) {
+    var b = $('#formError'); b.textContent = t(key, params); b.setAttribute('data-i18n', key); b.hidden = false; b.focus();
+  }
+  function hideFormError() { $('#formError').hidden = true; }
+
+  function submit() {
+    if (state.submitting) return;               // prevents double submission
+    hideFormError();
+    for (var i = 0; i < STEPS.length; i++) {
+      if (!validateStep(i)) { go(i); validateStep(i); showFormError('err.fixBelow'); return; }
+    }
+    var payload = values();
+    payload.photo = state.photo;
+    payload.consentPhoto = !!(state.photo && ($('#f-photo-consent') || {}).checked);
+    payload.submissionToken = state.token;
+    payload.language = A.lang;
+    payload.hp = (form.querySelector('[name="hp"]') || {}).value || '';
+    state.submitting = true;
+    $('#btnSubmit').disabled = true;
+    A.loading(true, 'reg.submitting');
+    A.api('submitRegistration', payload).then(function (res) {
+      if (res && res.ok) { onSuccess(res); return; }
+      handleFailure(res || {});
+    }).catch(function (err) {
+      handleFailure({ code: err && err.code === 'OFFLINE' ? 'OFFLINE' : 'NETWORK' });
+    }).then(function () {
+      state.submitting = false;
+      $('#btnSubmit').disabled = false;
+      A.loading(false);
+    });
+  }
+
+  function handleFailure(res) {
+    switch (res.code) {
+      case 'VALIDATION':
+        var errs = res.errors || {}, first = null;
+        Object.keys(errs).forEach(function (k) {
+          if (k === '_form') return;
+          A.showError(form, k, errs[k]);
+          var s = stepOfField(k); if (first === null || s < first) first = s;
+        });
+        if (first !== null) { go(first); }
+        showFormError(first === null ? 'err.generic' : 'err.fixBelow');
+        break;
+      case 'DUPLICATE': showFormError('err.duplicate'); break;
+      case 'BUSY': showFormError('err.busy'); break;
+      case 'CLOSED': showFormError('reg.closed'); break;
+      case 'NETWORK': case 'OFFLINE': showFormError('err.network'); break;
+      default: showFormError('err.server');
+    }
+  }
+
+  function onSuccess(res) {
+    clearDraft();
+    $('#successId').textContent = res.registrationId;
+    $('#successEmail').hidden = !res.emailSent;
+    $('#regFormView').hidden = true;
+    $('#regSuccessView').hidden = false;
+    state.token = A.uuid();
+    window.scrollTo(0, 0);
+  }
+  function showForm() { $('#regSuccessView').hidden = true; $('#regFormView').hidden = false; go(0); }
+
+  function copyId() {
+    var id = $('#successId').textContent;
+    var done = function () { A.toast(t('success.copied')); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(id).then(done, fallback);
+    else fallback();
+    function fallback() {
+      var r = document.createRange(); r.selectNodeContents($('#successId'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      try { document.execCommand('copy'); done(); } catch (e) { /* user can copy manually */ }
+    }
+  }
+
+  /* ---------------------------------------------------------- draft */
+  function clearDraft() { A.storageSet(DRAFT_KEY, null); $('#draftRestored').hidden = true; }
+  function restoreDraft() {
+    var raw = A.storageGet(DRAFT_KEY); if (!raw) return;
+    try {
+      var d = JSON.parse(raw);
+      A.writeValues(form, FIELDS, d, 'public');
+      var same = $('#f-whatsapp-same'); if (same && d._sameAs) same.checked = true;
+      syncSameAs();
+      A.refreshConditional(form, FIELDS, values());
+      $('#draftRestored').hidden = false;
+      var s = Math.min(Number(d._step) || 0, STEPS.length - 1);
+      state.maxStep = s; go(s);
+    } catch (e) { clearDraft(); }
+  }
+  function resetForm() {
+    form.reset();
+    clearPhoto();
+    $$('[data-error-for]', form).forEach(function (p) { A.showError(form, p.getAttribute('data-error-for'), ''); });
+    syncSameAs();
+    A.refreshConditional(form, FIELDS, values());
+    state.maxStep = 0; state.token = A.uuid();
+    $$('[data-counter]', form).forEach(function (c) { c.textContent = c.textContent.replace(/^\d+/, '0'); });
+    go(0);
+  }
+
+  A.onLangChange(function () {
+    if (!state.initialised) return;
+    updateProgress();
+    if (state.step === TOTAL - 1) renderReview();
+    var fe = $('#formError'); if (!fe.hidden && fe.getAttribute('data-i18n')) fe.textContent = t(fe.getAttribute('data-i18n'));
+  });
+
+  A.Registration = {
+    init: function () {
+      if (state.initialised) return;
+      build();
+      state.initialised = true;
+      if (String(A.settings.REGISTRATION_OPEN).toUpperCase() === 'FALSE') {
+        $('#regClosed').hidden = false; $('#btnNext').disabled = true;
+      }
+      restoreDraft();
+      updateProgress();
+      $('#btnPrev').style.visibility = state.step === 0 ? 'hidden' : 'visible';
+    },
+    open: function () { if (!state.initialised) this.init(); if (!$('#regSuccessView').hidden) return; updateProgress(); }
+  };
+});
+</script>
